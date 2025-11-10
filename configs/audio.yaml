@@ -12,7 +12,7 @@ min_valid_seconds: 0.9 #1.1
 barge_enabled: true
 barge_allow_during_tts: true         # ok dacă AEC e bun; altfel pune false
 barge_voice_hold_ms: 400 #320
-barge_debug_meter: true #false
+barge_debug_meter: false 
 barge_debug_interval_ms: 120
 barge_voice_drop_ms: 10
 
