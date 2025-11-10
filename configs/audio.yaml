@@ -35,7 +35,7 @@ barge_cobra_relax_db: 0.0 #2.5           # când Cobra e activă, reduce pragul 
 
 cobra:
   enabled: true
-  threshold: 0.80 #0.78                     # prag puțin mai permisiv, dar încă selectiv
+  threshold: 0.90 #0.78                     # prag puțin mai permisiv, dar încă selectiv
   hold_ms: 260 #240
   access_key: "${PICOVOICE_ACCESS_KEY}"
 
