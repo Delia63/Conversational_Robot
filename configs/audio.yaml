@@ -3,40 +3,40 @@ block_ms: 20
 
 # VAD agresiv pentru sesiuni (3 = cel mai strict)
 vad_aggressiveness: 3
-silence_ms_to_end: 1500 #1400
+silence_ms_to_end: 1400
 max_record_seconds: 6
 session_idle_seconds: 12
-min_valid_seconds: 0.9 #1.1
+min_valid_seconds: 1.1
 
 # ——— BARGE-IN INTELIGENT (doar voce umană) ———
 barge_enabled: true
 barge_allow_during_tts: true         # ok dacă AEC e bun; altfel pune false
-barge_voice_hold_ms: 400 #320
-barge_debug_meter: false #false
+barge_voice_hold_ms: 320
+barge_debug_meter: true #false
 barge_debug_interval_ms: 120
 barge_voice_drop_ms: 10
 
-barge_min_voice_ms: 1200 #550           # 400–600ms = echilibrat
-barge_min_rms_dbfs: -14 #-27              # un pic mai permisiv decât STRICT
+barge_min_voice_ms: 450           # 400–600ms = echilibrat
+barge_min_rms_dbfs: -27              # un pic mai permisiv decât STRICT
 
-barge_highpass_hz: 240 #180               # taie huruit, păstrează timbrul vocii
+barge_highpass_hz: 180               # taie huruit, păstrează timbrul vocii
 
 # ZCR ca filtru auxiliar, dar nu “omorâtor”
-barge_zcr_min: 0.12 #0.07
-barge_zcr_max: 0.22 #0.28
+barge_zcr_min: 0.07
+barge_zcr_max: 0.28
 
-barge_debounce_ms: 400 #200
-barge_cooldown_ms: 2200 #1000
-barge_arm_after_ms: 2000 #1100
-barge_leak_margin_db: 12.0 #5.0          # ~4 dB peste eco-ul măsurat e suficient
-barge_leak_decay_ms: 2800 #1800           # cât timp păstrează baseline-ul eco-ului măsurat
+barge_debounce_ms: 200
+barge_cooldown_ms: 1000
+barge_arm_after_ms: 1100
+barge_leak_margin_db: 5.0          # ~4 dB peste eco-ul măsurat e suficient
+barge_leak_decay_ms: 1800           # cât timp păstrează baseline-ul eco-ului măsurat
 barge_require_cobra: true           # cere confirmare Cobra pentru barge-in (anti-eco)
-barge_cobra_relax_db: 0.0 #2.5           # când Cobra e activă, reduce pragul cu ~2.5 dB
+barge_cobra_relax_db: 2.5           # când Cobra e activă, reduce pragul cu ~2.5 dB
 
 cobra:
   enabled: true
-  threshold: 0.90 #0.78                     # prag puțin mai permisiv, dar încă selectiv
-  hold_ms: 260 #240
+  threshold: 0.96                    # prag puțin mai permisiv, dar încă selectiv
+  hold_ms: 240
   access_key: "${PICOVOICE_ACCESS_KEY}"
 
 # ——— Audio device & AEC ———
