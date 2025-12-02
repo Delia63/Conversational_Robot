@@ -1,6 +1,6 @@
 # src/core/config_schema.py
 from pydantic import BaseModel, Field, field_validator, ConfigDict
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 
 class AudioCfg(BaseModel):
     model_config = ConfigDict(extra="allow", protected_namespaces=())
@@ -104,6 +104,22 @@ class FastExitCfg(BaseModel):
     phrase_langs: Dict[str, str] = Field(default_factory=dict)
     picovoice: Optional[FastExitPicovoiceCfg] = None
 
+class StopHotwordCfg(BaseModel):
+    model_config = ConfigDict(extra="allow", protected_namespaces=())
+    enabled: bool = False
+    engine: Literal["openwakeword", "porcupine", "text"] = "porcupine"
+    model_path: Optional[str] = None
+    threshold: float = Field(0.6, ge=0.0, le=1.0)
+    inference_framework: Optional[str] = Field("onnx")
+    min_gap_ms: int = Field(900, ge=0)
+    label: str = Field("stop now")
+    mode: Literal["barge", "exit"] = "barge"
+    keyword_path: Optional[str] = None
+    access_key: Optional[str] = None
+    sensitivity: Optional[float] = Field(None, ge=0.0, le=1.0)
+    phrases: List[str] = Field(default_factory=list)
+    fuzzy: int = Field(92, ge=0, le=100)
+
 class AppCfg(BaseModel):
     model_config = ConfigDict(extra="allow", protected_namespaces=())
     audio: AudioCfg
@@ -114,6 +130,7 @@ class AppCfg(BaseModel):
     route: RouteCfg
     paths: PathsCfg
     fast_exit: Optional[FastExitCfg] = None
+    stop_hotword: Optional[StopHotwordCfg] = None
     core: Dict[str, Any] = Field(default_factory=dict)
 
 def validate_all(raw: dict) -> dict:

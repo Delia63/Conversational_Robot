@@ -49,6 +49,44 @@ def _fmt_ms(avg_s, count):
         return "—"
     return f"{avg_s*1000:.0f} ms (n={int(count)})"
 
+
+def gather_metrics_snapshot():
+    histograms = [
+        ("Round-trip", round_trip),
+        ("ASR latency", asr_latency),
+        ("LLM first token", llm_first_token_latency),
+        ("LLM total", llm_latency),
+        ("TTS latency", tts_latency),
+    ]
+    counters = [
+        ("Wake triggers", wake_triggers),
+        ("Sessions started", sessions_started),
+        ("Sessions ended", sessions_ended),
+        ("Turns", interactions),
+        ("TTS speak calls", tts_speak_calls),
+        ("\"Unknown\" replies", unknown_answer),
+        ("Errors", errors_total),
+    ]
+    latencies = []
+    for label, hist in histograms:
+        s, c = _hist_sum_count(hist)
+        avg = (s / c) if c else None
+        latencies.append((label, avg, c))
+    counter_vals = [(label, int(_counter_val(cnt))) for label, cnt in counters]
+    return {"latencies": latencies, "counters": counter_vals}
+
+
+def log_metrics_snapshot(logger):
+    snap = gather_metrics_snapshot()
+    logger.info("📊 Metrics snapshot (averages/counters):")
+    for label, avg, count in snap["latencies"]:
+        if avg is None or count == 0:
+            logger.info(f"  • {label}: —")
+        else:
+            logger.info(f"  • {label}: {avg*1000:.0f} ms (n={int(count)})")
+    for label, value in snap["counters"]:
+        logger.info(f"  • {label}: {value}")
+
 def _render_vitals_html():
     hs = [
         ("Round-trip", round_trip),

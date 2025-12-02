@@ -17,9 +17,9 @@ barge_debug_interval_ms: 120
 barge_voice_drop_ms: 10
 
 barge_min_voice_ms: 550           # cere ~0.5s voce continuă; crește dacă încă prinde eco
-barge_min_rms_dbfs: -20              # nivel minim al vocii; difuzoarele rămân de obicei sub -25 dB
+barge_min_rms_dbfs: -115             # nivel minim al vocii; difuzoarele rămân de obicei sub -25 dB
 
-barge_highpass_hz: 180               # taie huruit/bas înainte de analiză, păstrează voc
+barge_highpass_hz: 160               # taie huruit/bas înainte de analiză, păstrează voc
 # ZCR = zero-cross rate (ajută să eliminăm zgomote impulsive)
 barge_zcr_min: 0.07
 barge_zcr_max: 0.28
@@ -38,6 +38,14 @@ cobra:
 
   hold_ms: 240
   access_key: "${PICOVOICE_ACCESS_KEY}"
+
+# ——— Text-based stop (ASR) ———
+stop_text_min_voice_ms: 80
+stop_text_trigger_ms: 120
+stop_text_silence_ms: 150
+stop_text_max_ms: 1500
+stop_text_overlap_ms: 120
+stop_text_debug: true
 
 # ——— Audio device & AEC ———
 prefer_echo_cancel: true

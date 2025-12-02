@@ -21,10 +21,9 @@ fast_exit:
 
 stop_hotword:
   enabled: true
-  engine: openwakeword      # openwakeword | porcupine
-  model_path: "/home/delia/Conversational_Robot/Conversational_Bot/voices/stop_now.onnx"
-  threshold: 0.6
-  inference_framework: "onnx"
-  min_gap_ms: 900
-  label: "stop now"
-  mode: "barge"    # barge = doar oprește TTS; exit = închide sesiunea
+  engine: text             # folosește transcript ASR
+  label: "stop robot"
+  mode: "barge"            # barge = doar oprește TTS; exit = închide sesiunea
+  phrases:
+    - "stop robot"
+  fuzzy: 94

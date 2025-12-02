@@ -10,12 +10,13 @@ Private, local, low-latency voice assistant with hotword detection, ASR, **strea
 * **ASR with clean endpointing** — Faster-Whisper tuned for short turns; **standby** listens in tight windows; **active sessions** auto-detect RO/EN (standby favors EN for reliable hotwords).
 * **Streaming LLM → streaming TTS** — Real-time token streaming to speech; **time-to-first-token (TTFT)** is measured so replies feel snappy.
 * **Audio hygiene** — System echo-cancel (AEC), noise suppression, high-pass filter; **AGC off** to avoid noise pumping & false VAD triggers.
-* **Picovoice stop hotword** — `fast_exit.picovoice` + `PORCUPINE_STOP_PPN` for an offline “stop now” keyword that cuts sessions instantly (ASR “ok bye/gata” stays as fallback).
+* **Stop command flexibility** — Use the built-in ASR (“stop robot”) or an OpenWakeWord model to cut TTS instantly; no Picovoice keys required.
 * **No accidental “pa…” exits** — Session closes **only** on exact goodbyes (e.g., “ok bye”, “gata”, “la revedere”).
 * **Observability** — Prometheus counters + a simple `/vitals` page for round-trip, ASR, TTFT, sessions, turns, errors.
 * **Double buffer for seamless TTS** — Prevents micro-pauses when the bot speaks; while buffer A plays, buffer B synthesizes the next chunk, then they alternate continuously.
 * **English <> Romanian** — Improved command & QA flow in English while keeping full Romanian support.
 * **Honest fallback** — If the bot doesn’t know, it says so (“I’m not sure about that yet, but I can look it up if you’d like.”).
+* **Graceful CTRL+C shutdown** — One keystroke stops TTS, flushes buffers, dumps a metrics snapshot, and closes all background listeners.
 
 ---
 
@@ -39,12 +40,13 @@ Private, local, low-latency voice assistant with hotword detection, ASR, **strea
    ```bash
    LOG_LEVEL=INFO LOG_DIR=logs python -m src.app
    ```
+   Press **CTRL+C once** to exit cleanly — it stops TTS, flushes buffers, dumps a metrics snapshot, and closes all background listeners (no need for `pkill`).
 
 5. **(Optional) Wake Hotword** 
    Picovoice Porcupine for “hello robot”; if missing, text fallback is used.
 
-6. **(Optional) Stop Hotword** 
-   A Picovoice `.ppn` for “stop now” to end the session instantly (ASR goodbyes remain as fallback).
+6. **Stop command (ASR or hotword)**  
+   By default `stop_hotword.engine: text` listens for “stop robot” even while TTS is speaking; only that fuzzy-matched phrase will barge the bot. If you prefer a wakeword model, swap to `openwakeword`/`porcupine` in `configs/core.yaml`.
 
 7. **Route audio correctly (AEC)** ➜ see **🔊 Audio routing (AEC) & pavucontrol** 
    TTS → `Echo-Cancel Sink`, Microphone → `Echo-Cancel Source`. Verify and adjust with pavucontrol.
@@ -53,14 +55,14 @@ Private, local, low-latency voice assistant with hotword detection, ASR, **strea
 
 ## 🧩 Mini flow (pipeline)
 
-**Standby & Wake** → (Porcupine **or** text fallback)  
-→ **Acknowledgement** (“Yes, I’m listening.” / “Da, te ascult.”)  
-→ **Record & endpoint** (VAD on silence; AEC + NS + HPF; AGC off)  
-→ **ASR** (Faster-Whisper; session auto RO/EN; standby favors EN)  
-→ **LLM** (streamed generation; **strict-facts** mode to reduce hallucinations)  
-→ **TTS** (streamed **sentence chunks**)  
-→ **Double buffer** (A plays, B synthesizes; swap)  
-→ **Barge-in** (if the user speaks, TTS stops; return to listening)  
+**Standby & Wake** → (Porcupine **or** text fallback) 
+→ **Acknowledgement** (“Yes, I’m listening.” / “Da, te ascult.”) 
+→ **Record & endpoint** (VAD on silence; AEC + NS + HPF; AGC off) 
+→ **ASR** (Faster-Whisper; session auto RO/EN; standby favors EN) 
+→ **LLM** (streamed generation; **strict-facts** mode to reduce hallucinations) 
+→ **TTS** (streamed **sentence chunks**) 
+→ **Double buffer** (A plays, B synthesizes; swap) 
+→ **Barge-in** (if the user speaks, TTS stops; return to listening) 
 → **Session end** (idle timeout **or** exact-match goodbye)
 
 ---
@@ -152,6 +154,7 @@ pavucontrol &
 - Recommended volumes: `ec_speaker` **60–65%**, `ec_mic` **100–120%** (AGC off).
 
 > If `ec_speaker` / `ec_mic` don’t appear in the dropdown, re-run **Create echo-cancel devices** and reopen pavucontrol.
+> Once routing looks correct, stop the bot with `CTRL+C` and immediately run `tools/calibrate_audio.py` (see **Calibrate room thresholds**) so the thresholds match this setup.
 
 ## 4) Quick CLI checks
 ```bash
@@ -177,6 +180,28 @@ pactl list short sources | grep ec_mic
 
 ---
 
+## 🎛️ Calibrate room thresholds (`tools/calibrate_audio.py`)
+
+Use this wizard whenever you change speakers, room layout, or microphone gain so `configs/audio.yaml` reflects your real echo level.
+
+1. **Route once, reuse everywhere.** Launch the bot briefly, open `pavucontrol`, and set the `python` playback stream to `Echo-Cancel Sink` (~60–65 % volume) and the recording stream to `Echo-Cancel Source` (100 %). Stop the bot with a single `CTRL+C`.
+2. **Run the wizard (≈30 s tone).**
+   ```bash
+   PULSE_SOURCE=ec_mic PULSE_SINK=ec_speaker python tools/calibrate_audio.py --duration 30
+   ```
+   Stay silent while the tone plays; watch `pavucontrol` if you want to confirm the routing.
+3. **Apply the suggestions.** At the end you’ll get lines such as:
+   ```
+   barge_min_rms_dbfs: 24.3
+   barge_highpass_hz: 200
+   similarity_veto.max_input_rms_db: 21.8
+   similarity_veto.ncc_threshold: 0.78
+   ```
+   Copy them into `configs/audio.yaml` (keep AGC off). These numbers are derived from the measured speaker leak, so barge-in and the similarity veto trigger only when real speech is present.
+4. **Re-run after major changes.** If you move the robot, change speaker volume, or switch microphones, repeat the wizard so the thresholds stay accurate.
+
+---
+
 ## 🔄 Models & reasoning
 
 * **ASR**: OpenAI Whisper → **Faster-Whisper** (lower latency on CPU).
@@ -192,6 +217,7 @@ pactl list short sources | grep ec_mic
 * **Without Picovoice**: WebRTC VAD + tuned thresholds can pause TTS when **human voice** is detected.
 * **With Picovoice**: **Cobra VAD** is more robust to noise; **Porcupine** gives instant wake.
 * If you don’t have keys, fallback to text matching for wake and to WebRTC VAD for barge-in.
+* Text-based stop (`stop_hotword.engine: text`) keeps TTS playing for everything except fuzzy matches on “stop robot”; the ASR listener runs only during TTS so regular speech won’t interrupt.
 
 **Pro-tips**
 * Raise `min_speech_duration` to avoid coughs/knocks.

@@ -37,6 +37,9 @@ def load_all() -> Dict[str, Any]:
         except Exception:
             core_cfg = {}
 
+    fast_exit_section = core_cfg.get("fast_exit") if isinstance(core_cfg, dict) else None
+    stop_hotword_section = core_cfg.get("stop_hotword") if isinstance(core_cfg, dict) else None
+
     raw = {
         "audio": load_yaml("audio.yaml"),
         "asr":   load_yaml("asr.yaml"),
@@ -45,7 +48,8 @@ def load_all() -> Dict[str, Any]:
         "wake":  load_yaml("wake.yaml"),
         "route": load_yaml("routing.yaml"),
         "core":  core_cfg,
-        "fast_exit": (core_cfg.get("fast_exit") if isinstance(core_cfg, dict) else None),
+        "fast_exit": fast_exit_section,
+        "stop_hotword": stop_hotword_section,
         "paths": {
             "data": str((ROOT / "data").absolute()),
             "models": str((ROOT / "models").absolute()),
