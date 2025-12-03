@@ -45,8 +45,6 @@ class FastExit:
             except Exception:
                 continue
         self.phrase_langs = raw_langs
-        picovoice_cfg = cfg.get("picovoice") or {}
-        self.picovoice_lang = (picovoice_cfg.get("lang") or "").lower().strip() or None
         self.use_barge = bool(cfg.get("use_barge_check", True))
         self.barge = barge
 
@@ -164,6 +162,4 @@ class FastExit:
             norm = ""
         if norm and norm in self.phrase_langs:
             return self.phrase_langs[norm]
-        if (matched or "").startswith("picovoice") and self.picovoice_lang:
-            return self.picovoice_lang
         return None

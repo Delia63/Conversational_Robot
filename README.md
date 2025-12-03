@@ -10,7 +10,7 @@ Private, local, low-latency voice assistant with hotword detection, ASR, **strea
 * **ASR with clean endpointing** — Faster-Whisper tuned for short turns; **standby** listens in tight windows; **active sessions** auto-detect RO/EN (standby favors EN for reliable hotwords).
 * **Streaming LLM → streaming TTS** — Real-time token streaming to speech; **time-to-first-token (TTFT)** is measured so replies feel snappy.
 * **Audio hygiene** — System echo-cancel (AEC), noise suppression, high-pass filter; **AGC off** to avoid noise pumping & false VAD triggers.
-* **Picovoice stop hotword** — `fast_exit.picovoice` + `PORCUPINE_STOP_PPN` for an offline “stop now” keyword that cuts sessions instantly (ASR “ok bye/gata” stays as fallback).
+* **PyTorch stop keyword** — custom ONNX model (`audio.stop_keyword`) monitors the mic only while TTS talks and instantly cuts playback when you say “stop robot”.
 * **No accidental “pa…” exits** — Session closes **only** on exact goodbyes (e.g., “ok bye”, “gata”, “la revedere”).
 * **Observability** — Prometheus counters + a simple `/vitals` page for round-trip, ASR, TTFT, sessions, turns, errors.
 * **Double buffer for seamless TTS** — Prevents micro-pauses when the bot speaks; while buffer A plays, buffer B synthesizes the next chunk, then they alternate continuously.
@@ -45,8 +45,8 @@ Private, local, low-latency voice assistant with hotword detection, ASR, **strea
 5. **(Optional) Wake Hotword** 
    Picovoice Porcupine for “hello robot”; if missing, text fallback is used.
 
-6. **Stop command (ASR or hotword)** 
-   By default `stop_hotword.engine: text` listens for “stop robot” even while TTS is speaking; only that fuzzy-matched phrase will barge the bot. If you prefer a wakeword model, swap to `openwakeword`/`porcupine` in `configs/core.yaml`.
+6. **Stop command (PyTorch detector)** 
+   `audio.stop_keyword` loads `voices/stop_keyword.onnx` (other vs stop classes) and runs only while TTS is speaking. Tune `logit_margin`, `prob_threshold`, or `hits_required` if you need stricter detection.
 
 7. **Route audio correctly (AEC)** ➜ see **🔊 Audio routing (AEC) & pavucontrol** 
    TTS → `Echo-Cancel Sink`, Microphone → `Echo-Cancel Source`. Verify and adjust with pavucontrol.
@@ -217,7 +217,7 @@ Use this wizard whenever you change speakers, room layout, or microphone gain so
 * **Without Picovoice**: WebRTC VAD + tuned thresholds can pause TTS when **human voice** is detected.
 * **With Picovoice**: **Cobra VAD** is more robust to noise; **Porcupine** gives instant wake.
 * If you don’t have keys, fallback to text matching for wake and to WebRTC VAD for barge-in.
-* Text-based stop (`stop_hotword.engine: text`) keeps TTS playing for everything except fuzzy matches on “stop robot”; the ASR listener runs only during TTS so regular speech won’t interrupt.
+* The ONNX stop keyword detector watches 1s windows (0.5s hop) while TTS speaks and cuts playback when the “stop robot” logit margin/probability crosses your configured thresholds.
 
 **Pro-tips**
 * Raise `min_speech_duration` to avoid coughs/knocks.

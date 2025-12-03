@@ -83,15 +83,6 @@ class PathsCfg(BaseModel):
     data: str
     models: str
 
-class FastExitPicovoiceCfg(BaseModel):
-    model_config = ConfigDict(extra="allow", protected_namespaces=())
-    enabled: bool = False
-    keyword_path: Optional[str] = None
-    sensitivity: float = Field(0.6, ge=0.1, le=1.0)
-    access_key: Optional[str] = None
-    label: Optional[str] = Field("stop")
-    lang: Optional[str] = Field("auto")
-
 class FastExitCfg(BaseModel):
     model_config = ConfigDict(extra="allow", protected_namespaces=())
     enabled: bool = True
@@ -102,23 +93,6 @@ class FastExitCfg(BaseModel):
     confirm_tts: Optional[Dict[str, str] | str] = None
     use_barge_check: bool = True
     phrase_langs: Dict[str, str] = Field(default_factory=dict)
-    picovoice: Optional[FastExitPicovoiceCfg] = None
-
-class StopHotwordCfg(BaseModel):
-    model_config = ConfigDict(extra="allow", protected_namespaces=())
-    enabled: bool = False
-    engine: Literal["openwakeword", "porcupine", "text"] = "porcupine"
-    model_path: Optional[str] = None
-    threshold: float = Field(0.6, ge=0.0, le=1.0)
-    inference_framework: Optional[str] = Field("onnx")
-    min_gap_ms: int = Field(900, ge=0)
-    label: str = Field("stop now")
-    mode: Literal["barge", "exit"] = "barge"
-    keyword_path: Optional[str] = None
-    access_key: Optional[str] = None
-    sensitivity: Optional[float] = Field(None, ge=0.0, le=1.0)
-    phrases: List[str] = Field(default_factory=list)
-    fuzzy: int = Field(92, ge=0, le=100)
 
 class AppCfg(BaseModel):
     model_config = ConfigDict(extra="allow", protected_namespaces=())
@@ -130,7 +104,6 @@ class AppCfg(BaseModel):
     route: RouteCfg
     paths: PathsCfg
     fast_exit: Optional[FastExitCfg] = None
-    stop_hotword: Optional[StopHotwordCfg] = None
     core: Dict[str, Any] = Field(default_factory=dict)
 
 def validate_all(raw: dict) -> dict:

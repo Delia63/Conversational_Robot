@@ -18,12 +18,3 @@ fast_exit:
     threshold: 0.55
     min_gap_ms: 1200
     label: "goodbye robot"
-
-stop_hotword:
-  enabled: true
-  engine: openwakeword
-  model_path: "/home/delia/Conversational_Robot/Conversational_Bot/voices/stop_robot.onnx"
-  threshold: 0.55
-  min_gap_ms: 900
-  label: "stop robot"
-  mode: "barge"

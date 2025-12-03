@@ -21,7 +21,6 @@ from src.core.wake import WakeDetector
 from src.wake.openwakeword_engine import OpenWakeWordEngine
 from src.utils.textnorm import normalize_text
 from src.audio.openwakeword_listener import OpenWakeWordListener
-from src.audio.text_stop_listener import TextStopListener
 from src.llm.stream_shaper import shape_stream  # netezire stream LLM→TTS
 
 from src.telemetry.metrics import (
@@ -137,56 +136,11 @@ def main():
     state = BotState.LISTENING
     fast_exit_cfg = (cfg.get("fast_exit") or cfg.get("core", {}).get("fast_exit") or {})
     fast_exit = FastExit(tts, llm, state, logger, fast_exit_cfg, barge=None)
-    stop_barge_event = threading.Event()
-    stop_hotword_cfg = cfg.get("stop_hotword") or {}
     fast_exit_hotword_cfg = (fast_exit_cfg.get("hotword") or {})
-    stop_mode = (stop_hotword_cfg.get("mode") or "exit").lower()
-    stop_label = (stop_hotword_cfg.get("label") or "stop").strip() or "stop"
-    PV_KEY = os.getenv("PICOVOICE_ACCESS_KEY", "").strip()
-    stop_engine = (stop_hotword_cfg.get("engine") or "porcupine").lower()
     goodbye_engine = (fast_exit_hotword_cfg.get("engine") or "openwakeword").lower()
-    use_stop_hotword = bool(stop_hotword_cfg.get("enabled"))
     use_fast_exit_hotword = bool(fast_exit_hotword_cfg.get("enabled"))
-    stop_listener_cfg: Optional[dict] = None
     fast_exit_listener_cfg: Optional[dict] = None
-    stop_text_phrases_norm: List[str] = []
-    stop_text_display: List[str] = []
-    stop_text_fuzzy = 92
-    stop_listener = None
     goodbye_listener: Optional[OpenWakeWordListener] = None
-
-    if use_stop_hotword and stop_engine == "openwakeword":
-        oww_path = (
-            os.getenv("OPENWAKE_STOP_MODEL", "").strip()
-            or str(stop_hotword_cfg.get("model_path") or "").strip()
-        )
-        if not oww_path:
-            logger.warning("🔕 Stop hotword (openwakeword): lipsește model_path.")
-            use_stop_hotword = False
-        elif not Path(oww_path).expanduser().exists():
-            logger.warning(f"🔕 Stop hotword model lipsă: {oww_path}")
-            use_stop_hotword = False
-        else:
-            stop_listener_cfg = dict(stop_hotword_cfg)
-            stop_listener_cfg["model_path"] = str(Path(oww_path).expanduser())
-            stop_listener_cfg["label"] = stop_label
-            stop_listener_cfg.setdefault("threshold", 0.5)
-            stop_listener_cfg.setdefault("min_gap_ms", stop_listener_cfg.get("cooldown_ms", 900))
-    elif use_stop_hotword and stop_engine == "porcupine":
-        logger.warning("🔕 Stop hotword (porcupine) nu mai este suportat — folosește openwakeword sau text.")
-        use_stop_hotword = False
-    elif use_stop_hotword and stop_engine == "text":
-        raw_phrases = stop_hotword_cfg.get("phrases") or [stop_label]
-        stop_text_display = [p for p in raw_phrases if p]
-        for phrase in raw_phrases:
-            norm = _normalize_phrase(phrase)
-            if norm:
-                stop_text_phrases_norm.append(norm)
-        stop_text_fuzzy = int(stop_hotword_cfg.get("fuzzy", 92))
-        stop_text_fuzzy = max(0, min(100, stop_text_fuzzy))
-        if not stop_text_phrases_norm:
-            logger.warning("🔕 Stop via ASR: niciun stop_hotword.phrases valid — dezactivez.")
-            use_stop_hotword = False
 
     if use_fast_exit_hotword:
         if goodbye_engine != "openwakeword":
@@ -209,21 +163,6 @@ def main():
                 fast_exit_listener_cfg.setdefault("label", fast_exit_hotword_cfg.get("label") or "goodbye robot")
                 fast_exit_listener_cfg.setdefault("threshold", 0.5)
                 fast_exit_listener_cfg.setdefault("min_gap_ms", fast_exit_listener_cfg.get("cooldown_ms", 1200))
-
-    if use_stop_hotword:
-        if stop_engine == "text":
-            phrases_msg = ", ".join(stop_text_display or [stop_label])
-            mode_msg = "oprești TTS-ul" if stop_mode == "barge" else "închizi sesiunea"
-            logger.info(f"🛑 Stop via ASR: spune „{phrases_msg}” ca să {mode_msg}.")
-        elif stop_engine == "openwakeword":
-            engine_label = "openwakeword"
-            mode_msg = "că să oprești TTS-ul" if stop_mode == "barge" else "că să închizi instant sesiunea"
-            logger.info(f"🛑 Stop hotword disponibil ({engine_label}): spune „{stop_label}” {mode_msg}.")
-        else:
-            logger.info("🛑 Stop hotword dezactivat (engine nesuportat).")
-            use_stop_hotword = False
-    else:
-        logger.info("🛑 Stop hotword dezactivat.")
 
     if use_fast_exit_hotword and fast_exit_listener_cfg:
         logger.info("🟥 Goodbye hotword disponibil (openwakeword): spune „{label}” ca să închizi sesiunea.".format(
@@ -352,31 +291,7 @@ def main():
             # inițializări lipsă (FIX)
             session_idle_seconds = int(cfg["audio"].get("session_idle_seconds", 12))
             last_activity = time.time()
-            stop_listener = None
             goodbye_listener = None
-            stop_barge_event.clear()
-            if use_stop_hotword and stop_engine == "openwakeword" and stop_listener_cfg:
-                def _stop_cb(_label: str, *_a):
-                    if stop_mode == "barge":
-                        if tts.is_speaking():
-                            logger.info("🟠 Stop hotword detectat — opresc TTS și revin la listening.")
-                            stop_barge_event.set()
-                        else:
-                            logger.info("🟠 Stop hotword detectat, dar TTS nu vorbește — ignor.")
-                    else:
-                        fast_exit.trigger_exit("stop-hotword")
-                try:
-                    stop_listener = OpenWakeWordListener(
-                        cfg_audio=cfg["audio"],
-                        cfg_openwake=stop_listener_cfg,
-                        logger=logger,
-                        on_detect=_stop_cb,
-                    )
-                    stop_listener.start()
-                    logger.info(f"🛑 Stop hotword activ (openwakeword): spune „{stop_label}” ca să întrerupi TTS-ul.")
-                except Exception as e:
-                    logger.warning(f"🔕 Stop hotword dezactivat pentru sesiunea curentă: {e}")
-                    stop_listener = None
 
             if use_fast_exit_hotword and fast_exit_listener_cfg:
                 def _goodbye_cb(_label: str, *_a):
@@ -441,27 +356,6 @@ def main():
                         continue
 
                     user_text_norm = _normalize_phrase(user_text)
-                    if (
-                        use_stop_hotword
-                        and stop_engine == "text"
-                        and stop_text_phrases_norm
-                        and user_text_norm
-                    ):
-                        matched_stop = any(
-                            user_text_norm == phrase
-                            or fuzz.ratio(user_text_norm, phrase) >= stop_text_fuzzy
-                            for phrase in stop_text_phrases_norm
-                        )
-                        if matched_stop:
-                            if stop_mode == "barge":
-                                logger.info("🟠 Stop (ASR) detectat — revin la listening.")
-                                last_activity = time.time()
-                                continue
-                            else:
-                                logger.info("🟠 Stop (ASR) detectat — închid sesiunea.")
-                                fast_exit.trigger_exit("stop-asr")
-                                break
-
                     # FastExit (inclusiv pe transcript final)
                     if fast_exit.on_final(user_text):
                         logger.info("🔴 FastExit: închis pe transcript final.")
@@ -516,24 +410,6 @@ def main():
 
                     state = BotState.SPEAKING
                     tts_speak_calls.inc()
-                    stop_barge_event.clear()
-                    text_stop_listener = None
-                    if use_stop_hotword and stop_engine == "text" and stop_mode == "barge":
-                        try:
-                            def _text_stop_cb(_phrase: str):
-                                stop_barge_event.set()
-                            text_stop_listener = TextStopListener(
-                                cfg_audio=cfg["audio"],
-                                asr_engine=asr,
-                                phrases_norm=stop_text_phrases_norm,
-                                fuzzy_threshold=stop_text_fuzzy,
-                                logger=logger,
-                                on_detect=_text_stop_cb,
-                            )
-                            text_stop_listener.start()
-                        except Exception as e:
-                            text_stop_listener = None
-                            logger.warning(f"Stop via ASR indisponibil temporar: {e}")
                     tts.say_async_stream(
                         token_iter,
                         lang=user_lang,
@@ -542,49 +418,34 @@ def main():
                     )
 
                     # BARGE-IN în timpul TTS (protejată anti-eco și cu arm-delay)
-                    try:
-                        if not bool(cfg["audio"].get("barge_enabled", True)):
+                    if not bool(cfg["audio"].get("barge_enabled", True)):
+                        while tts.is_speaking():
+                            if fast_exit.pending():
+                                tts.stop()
+                                break
+                            time.sleep(0.05)
+                    elif not bool(cfg["audio"].get("barge_allow_during_tts", True)):
+                        while tts.is_speaking():
+                            if fast_exit.pending():
+                                tts.stop()
+                                break
+                            time.sleep(0.05)
+                    else:
+                        barge = BargeInListener(cfg["audio"], logger)
+                        fast_exit.barge = barge  # permite FastExit să verifice că vorbește userul, nu eco TTS
+                        try:
                             while tts.is_speaking():
-                                if fast_exit.pending() or stop_barge_event.is_set():
+                                if fast_exit.pending():
                                     tts.stop()
-                                    stop_barge_event.clear()
                                     break
-                                time.sleep(0.05)
-                        elif use_stop_hotword and stop_engine == "text":
-                            while tts.is_speaking():
-                                if fast_exit.pending() or stop_barge_event.is_set():
+                                need = int(cfg["audio"].get("barge_min_voice_ms", 650))
+                                if barge.heard_speech(need_ms=need):
+                                    logger.info("⛔ Barge-in detectat — opresc TTS și trec la listening.")
                                     tts.stop()
-                                    stop_barge_event.clear()
                                     break
-                                time.sleep(0.05)
-                        elif not bool(cfg["audio"].get("barge_allow_during_tts", True)):
-                            while tts.is_speaking():
-                                if fast_exit.pending() or stop_barge_event.is_set():
-                                    tts.stop()
-                                    stop_barge_event.clear()
-                                    break
-                                time.sleep(0.05)
-                        else:
-                            barge = BargeInListener(cfg["audio"], logger)
-                            fast_exit.barge = barge  # permite FastExit să verifice că vorbește userul, nu eco TTS
-                            try:
-                                while tts.is_speaking():
-                                    if fast_exit.pending() or stop_barge_event.is_set():
-                                        tts.stop()
-                                        stop_barge_event.clear()
-                                        break
-                                    need = int(cfg["audio"].get("barge_min_voice_ms", 650))
-                                    if barge.heard_speech(need_ms=need):
-                                        logger.info("⛔ Barge-in detectat — opresc TTS și trec la listening.")
-                                        tts.stop()
-                                        break
-                                    time.sleep(0.03)
-                            finally:
-                                barge.close()
-                    finally:
-                        if text_stop_listener:
-                            text_stop_listener.stop()
-                            text_stop_listener = None
+                                time.sleep(0.03)
+                        finally:
+                            barge.close()
 
                     # finalizează logurile
                     debugger.on_tts_end()
@@ -596,8 +457,6 @@ def main():
 
                     last_activity = time.time()
             finally:
-                if stop_listener:
-                    stop_listener.stop()
                 if goodbye_listener:
                     goodbye_listener.stop()
 
