@@ -24,3 +24,6 @@ piper:
   noise_scale: 0.667
   noise_w: 0.8
   sentence_silence_ms: 80
+  warmup_enabled: true
+  warmup_text: "Hello! Testing audio pipeline."
+  warmup_lang: "en"

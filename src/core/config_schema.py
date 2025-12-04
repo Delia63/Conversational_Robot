@@ -52,6 +52,9 @@ class PiperCfg(BaseModel):
     noise_scale: float = 0.667
     noise_w: float = 0.8
     sentence_silence_ms: int = 80
+    warmup_enabled: bool = True
+    warmup_text: Optional[str] = Field("Hello, this is a quick warm-up.")
+    warmup_lang: Optional[str] = Field("en")
 
 class TTSCfg(BaseModel):
     model_config = ConfigDict(extra="allow", protected_namespaces=())

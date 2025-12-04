@@ -151,11 +151,16 @@ class _PiperCmdTTS:
         self.noise_scale = float(self.p.get("noise_scale", 0.667))
         self.noise_w = float(self.p.get("noise_w", 0.8))
         self.sentence_silence_ms = int(self.p.get("sentence_silence_ms", 80))
+        self.warmup_enabled = bool(self.p.get("warmup_enabled", True))
+        self.warmup_text = (self.p.get("warmup_text") or "").strip()
+        self.warmup_lang = (self.p.get("warmup_lang") or "en").lower()
 
         # Control
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._speaking = threading.Event()
+        self._warmup_lock = threading.Lock()
+        self._warmed_up = False
 
         # Double buffer queue (A/B)
         self._q: "queue.Queue[Optional[str]]" = queue.Queue(maxsize=2)
@@ -167,14 +172,46 @@ class _PiperCmdTTS:
 
         if not self.exe or not os.path.exists(self.exe):
             raise RuntimeError("Piper executable not found. Set tts.piper.exe or install piper-tts.")
+        self._ensure_warm()
 
     def is_speaking(self) -> bool:
         return self._speaking.is_set()
 
     def _pick_model(self, lang: str):
+        lang = (lang or "").lower()
         if lang.startswith("ro"):
             return self.model_ro, self.config_ro
         return self.model_en, self.config_en
+
+    def _resolve_warmup_lang(self, lang_hint: Optional[str]) -> str:
+        lang = (self.warmup_lang or lang_hint or "en").lower()
+        if lang.startswith("ro"):
+            return "ro"
+        return "en"
+
+    def _ensure_warm(self, lang_hint: Optional[str] = None):
+        if not self.warmup_enabled or self._warmed_up:
+            return
+        text = (self.warmup_text or "").strip()
+        if not text:
+            self.log.info("Piper warm-up: text gol, sar peste.")
+            self._warmed_up = True
+            return
+        with self._warmup_lock:
+            if not self.warmup_enabled or self._warmed_up:
+                return
+            lang = self._resolve_warmup_lang(lang_hint)
+            try:
+                self.log.info(f"🔥 Piper warm-up start (lang={lang})")
+                wav = self._synth_to_wav(text, lang)
+                try:
+                    os.remove(wav)
+                except Exception:
+                    pass
+                self._warmed_up = True
+                self.log.info("✅ Piper warm-up gata")
+            except Exception as e:
+                self.log.warning(f"Piper warm-up eșuat: {e}")
 
     def _synth_to_wav(self, text: str, lang: str) -> str:
         model, cfg = self._pick_model(lang)
@@ -333,6 +370,7 @@ class _PiperCmdTTS:
 
     def say(self, text: str, lang: str = "en"):
         """Sinteză blocking pe propoziții (fără stream din LLM)."""
+        self._ensure_warm(lang)
         tts_speak_calls.inc()
         self._speaking.set()
         try:
@@ -375,6 +413,7 @@ class _PiperCmdTTS:
         min_chunk_chars: int = 80,
         on_done: Optional[Callable[[], None]] = None,
     ):
+        self._ensure_warm(lang)
         def coordinator():
             try:
                 self._speaking.set()
