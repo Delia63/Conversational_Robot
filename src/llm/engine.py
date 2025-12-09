@@ -33,6 +33,9 @@ class LLMLocal:
         self.history_enabled = bool(self.cfg.get("history_enabled", True))
         self.max_history_turns = int(self.cfg.get("max_history_turns", 5))
 
+        # Fallback responses
+        self.fallback = self.cfg.get("fallback") or {}
+
         self._openai = None
         if self.provider == "openai":
             try:
@@ -72,6 +75,11 @@ class LLMLocal:
         except Exception as e:
             self.log.warning(f"LLM warm-up eșuat: {e}")
 
+    def _get_fallback(self, key: str, lang: str) -> str:
+        """Returnează mesajul de fallback pentru cheie și limbă."""
+        suffix = "_ro" if str(lang).lower().startswith("ro") else "_en"
+        return self.fallback.get(f"{key}{suffix}", "")
+
     def generate(self, user_text: str, lang_hint: str = "en", mode: Optional[str] = None) -> str:
         mode = (mode or self.default_mode).lower()
         with observe_hist(llm_latency):
@@ -99,9 +107,10 @@ class LLMLocal:
         return f"{'Am înțeles' if lang_hint.startswith('ro') else 'I heard'}: \"{user_text}\"."
 
     def _ollama_http(self, user_text: str, lang_hint: str, mode: str = "precise") -> str:
-        unknown_en = "That’s outside my current knowledge, but I’ll note it for improvement."
-        unknown_ro = "Interesant, Nu am răspunsul încă, dar exact întrebări ca asta mă ajută să devin mai bun."
-        unknown = unknown_ro if str(lang_hint).lower().startswith("ro") else unknown_en
+        # Fallback-uri din config
+        unknown = self._get_fallback("unknown", lang_hint) or "I don't know."
+        error_msg = self._get_fallback("error", lang_hint) or "Technical error."
+        empty_msg = self._get_fallback("empty", lang_hint) or unknown
 
         url = f"{self.host.rstrip('/')}/api/generate"
 
@@ -137,16 +146,18 @@ class LLMLocal:
             data = resp.json()
             text = (data.get("response") or "").strip()
             if self.strict_facts and not text:
-                return unknown
+                return empty_msg
             return text or "…"
+        except requests.exceptions.Timeout:
+            self.log.error("Ollama timeout")
+            return self._get_fallback("timeout", lang_hint) or error_msg
         except Exception as e:
             self.log.error(f"Ollama HTTP error: {e}")
-            return self._rule_based(user_text, lang_hint)
+            return error_msg
 
     def _ollama_stream(self, user_text: str, lang_hint: str, mode: str = "precise", history: Optional[List[Dict]] = None):
-        unknown_en = "That's outside my current knowledge, but I'll note it for improvement."
-        unknown_ro = "Interesant, Nu am răspunsul încă, dar exact întrebări ca asta mă ajută să devin mai bun."
-        unknown = unknown_ro if str(lang_hint).lower().startswith("ro") else unknown_en
+        # Fallback-uri din config
+        unknown = self._get_fallback("unknown", lang_hint) or "I don't know."
 
         url = f"{self.host.rstrip('/')}/api/generate"
 
@@ -183,35 +194,42 @@ class LLMLocal:
             prompt = f"{sys}\n{safety}\nUser ({lang_hint}): {user_text}\nAssistant:"
 
         start = time.perf_counter()
-        with requests.post(url, json={
-            "model": self.model,
-            "prompt": prompt,
-            "stream": True,
-            "options": {
-                "temperature": temperature,
-                "top_p": top_p,
-                "top_k": top_k,
-                "repeat_penalty": 1.1,
-                "num_predict": self.max_tokens
-            }
-        }, stream=True, timeout=120) as resp:
-            resp.raise_for_status()
-            first_token_s = None
-            for line in resp.iter_lines(decode_unicode=True):
-                if not line:
-                    continue
-                try:
-                    data = json.loads(line)
-                    tok = (data.get("response") or "")
-                    if tok:
-                        if first_token_s is None:
-                            first_token_s = time.perf_counter()
-                            self.log.info(f"LLM first token in {first_token_s - start:.2f}s")
-                        yield tok
-                except Exception:
-                    continue
-            if first_token_s is not None:
-                self.log.info(f"LLM stream completed in {time.perf_counter() - start:.2f}s")
+        try:
+            with requests.post(url, json={
+                "model": self.model,
+                "prompt": prompt,
+                "stream": True,
+                "options": {
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "top_k": top_k,
+                    "repeat_penalty": 1.1,
+                    "num_predict": self.max_tokens
+                }
+            }, stream=True, timeout=120) as resp:
+                resp.raise_for_status()
+                first_token_s = None
+                for line in resp.iter_lines(decode_unicode=True):
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                        tok = (data.get("response") or "")
+                        if tok:
+                            if first_token_s is None:
+                                first_token_s = time.perf_counter()
+                                self.log.info(f"LLM first token in {first_token_s - start:.2f}s")
+                            yield tok
+                    except Exception:
+                        continue
+                if first_token_s is not None:
+                    self.log.info(f"LLM stream completed in {time.perf_counter() - start:.2f}s")
+        except requests.exceptions.Timeout:
+            self.log.error("Ollama stream timeout")
+            yield self._get_fallback("timeout", lang_hint) or "Taking too long. Try again."
+        except Exception as e:
+            self.log.error(f"Ollama stream error: {e}")
+            yield self._get_fallback("error", lang_hint) or "Technical error. Try again."
 
     def _openai_chat(self, user_text: str, lang_hint: str) -> str:
         try:

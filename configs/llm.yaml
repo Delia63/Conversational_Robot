@@ -16,6 +16,17 @@ warmup_lang: "en"
 history_enabled: true
 max_history_turns: 5  # cate perechi user/assistant sa tina
 
+# Fallback responses: mesaje pentru cazuri de eroare
+fallback:
+  timeout_en: "I'm taking longer than usual. Please try again."
+  timeout_ro: "Îmi ia mai mult decât de obicei. Te rog încearcă din nou."
+  error_en: "I had a technical issue. Please try again."
+  error_ro: "Am avut o problemă tehnică. Te rog încearcă din nou."
+  empty_en: "I couldn't find an answer. Can you rephrase?"
+  empty_ro: "Nu am găsit un răspuns. Poți reformula?"
+  unknown_en: "That's outside my current knowledge, but I'll note it for improvement."
+  unknown_ro: "Interesant. Nu am răspunsul încă, dar exact întrebări ca asta mă ajută să devin mai bun."
+
 system_prompt: |-
   You are a friendly bilingual (Romanian/English) assistant for a local voice-controlled robot.
 
